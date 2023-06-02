@@ -18,7 +18,7 @@
 
 #include "Common.h"
 #include "Server/DBCStores.h"
-#include "Server/WorldPacket.h"
+#include "WorldPacket.h"
 #include "Server/WorldSession.h"
 #include "Globals/ObjectMgr.h"
 #include "AI/ScriptDevAI/ScriptDevAIMgr.h"
@@ -112,7 +112,7 @@ void WorldSession::HandleUseItemOpcode(WorldPacket& recvPacket)
     {
         for (const auto& Spell : proto->Spells)
         {
-            if (SpellEntry const* spellInfo = sSpellTemplate.LookupEntry<SpellEntry>(Spell.SpellId))
+            if (SpellEntry const* spellInfo = sSpellTemplate.LookupEntry(Spell.SpellId))
             {
                 if (IsNonCombatSpell(spellInfo))
                 {
@@ -157,12 +157,10 @@ void WorldSession::HandleUseItemOpcode(WorldPacket& recvPacket)
         }
 
         // send spell error
-        if (SpellEntry const* spellInfo = sSpellTemplate.LookupEntry<SpellEntry>(spellid))
+        if (SpellEntry const* spellInfo = sSpellTemplate.LookupEntry(spellid))
             Spell::SendCastResult(_player, spellInfo, cast_count, SPELL_FAILED_BAD_TARGETS);
         return;
     }
-
-    _player->RemoveAurasWithInterruptFlags(AURA_INTERRUPT_FLAG_ITEM_USE);
 
     // Note: If script stop casting it must send appropriate data to client to prevent stuck item in gray state.
     if (!sScriptDevAIMgr.OnItemUse(pUser, pItem, targets))
@@ -278,9 +276,6 @@ void WorldSession::HandleGameObjectUseOpcode(WorldPacket& recv_data)
     if (!_player->IsSelfMover())
         return;
 
-    if (_player->IsBeingTeleported())
-        return;
-
     GameObject* obj = _player->GetMap()->GetGameObject(guid);
     if (!obj)
         return;
@@ -319,15 +314,6 @@ void WorldSession::HandleGameObjectUseOpcode(WorldPacket& recv_data)
     if (obj->GetGOInfo()->CannotBeUsedUnderImmunity() && _player->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE))
         return;
 
-    // code meant to be in CanUseNow
-    if (obj->GetGoType() == GAMEOBJECT_TYPE_CHAIR)
-    {
-        float x, y;
-        std::tie(x, y) = obj->GetClosestChairSlotPosition(_player);
-        if (_player->GetDistance(x, y, obj->GetPositionZ(), DIST_CALC_NONE) > 3.f * 3.f)
-            return;
-    }
-
     obj->Use(_player);
 }
 
@@ -349,7 +335,7 @@ void WorldSession::HandleCastSpellOpcode(WorldPacket& recvPacket)
     DEBUG_LOG("WORLD: CMSG_CAST_SPELL, spellId - %u, cast_count: %u data length = " SIZEFMTD,
               spellId, cast_count, recvPacket.size());
 
-    SpellEntry const* spellInfo = sSpellTemplate.LookupEntry<SpellEntry>(spellId);
+    SpellEntry const* spellInfo = sSpellTemplate.LookupEntry(spellId);
     if (!spellInfo)
     {
         sLog.outError("WORLD: unknown spell id %u", spellId);
@@ -357,7 +343,6 @@ void WorldSession::HandleCastSpellOpcode(WorldPacket& recvPacket)
         return;
     }
 
-    Unit* caster = mover;
     if (mover->GetTypeId() == TYPEID_PLAYER)
     {
         // not have spell in spellbook or spell passive and not casted by client
@@ -371,18 +356,12 @@ void WorldSession::HandleCastSpellOpcode(WorldPacket& recvPacket)
     }
     else
     {
-        bool isPassive = IsPassiveSpell(spellInfo);
         // not have spell in spellbook or spell passive and not casted by client
-        if (!mover->HasSpell(spellId) || isPassive)
+        if (!mover->HasSpell(spellId) || IsPassiveSpell(spellInfo))
         {
-            if (!_player->HasSpell(spellId) || isPassive)
-            {
-                // cheater? kick? ban?
-                recvPacket.rpos(recvPacket.wpos());             // prevent spam at ignore packet
-                return;
-            }
-            else
-                caster = _player;
+            // cheater? kick? ban?
+            recvPacket.rpos(recvPacket.wpos());             // prevent spam at ignore packet
+            return;
         }
     }
 
@@ -399,7 +378,7 @@ void WorldSession::HandleCastSpellOpcode(WorldPacket& recvPacket)
     if (Unit* target = targets.getUnitTarget())
     {
         // if rank not found then function return nullptr but in explicit cast case original spell can be casted and later failed with appropriate error message
-        if (SpellEntry const* actualSpellInfo = sSpellMgr.SelectAuraRankForLevel(spellInfo, target->GetLevel()))
+        if (SpellEntry const* actualSpellInfo = sSpellMgr.SelectAuraRankForLevel(spellInfo, target->getLevel()))
             spellInfo = actualSpellInfo;
     }
 
@@ -410,21 +389,19 @@ void WorldSession::HandleCastSpellOpcode(WorldPacket& recvPacket)
         return;
 
     bool handled = false;
-    Spell* spell = new Spell(caster, spellInfo, TRIGGERED_NONE);
+    Spell* spell = new Spell(mover, spellInfo, TRIGGERED_NONE);
     spell->m_cast_count = cast_count;                       // set count of casts
-    spell->m_clientCast = true;
-    if (caster->HasGCD(spellInfo) || !caster->IsSpellReady(*spellInfo))
+    if (mover->HasGCD(spellInfo) || !mover->IsSpellReady(*spellInfo))
     {
-        if (caster->HasGCDOrCooldownWithinMargin(*spellInfo))
+        if (mover->HasGCDOrCooldownWithinMargin(*spellInfo))
         {
             handled = true;
             _player->SetQueuedSpell(spell);
-            GetMessager().AddMessage([guid = caster->GetObjectGuid(), isPlayer = caster != mover, targets = targets](WorldSession* session) mutable
+            GetMessager().AddMessage([guid = mover->GetObjectGuid(), targets = targets](WorldSession* session) mutable
             {
                 if (session->GetPlayer()) // in case of logout
                 {
-                    // in case of mind control end
-                    if ((isPlayer && session->GetPlayer()->GetObjectGuid() == guid) || (!isPlayer && session->GetPlayer()->GetMover()->GetObjectGuid() == guid))
+                    if (session->GetPlayer()->GetMover()->GetObjectGuid() == guid) // in case of mind control end
                         session->GetPlayer()->CastQueuedSpell(targets);
                     else
                         session->GetPlayer()->ClearQueuedSpell();
@@ -451,6 +428,10 @@ void WorldSession::HandleCancelCastOpcode(WorldPacket& recvPacket)
     if (!_player->IsClientControlled(_player))
         return;
 
+    // FIXME: hack, ignore unexpected client cancel Deadly Throw cast
+    if (spellId == 26679)
+        return;
+
     if (_player->IsNonMeleeSpellCasted(false))
         _player->InterruptNonMeleeSpells(false, spellId);
 }
@@ -460,11 +441,11 @@ void WorldSession::HandleCancelAuraOpcode(WorldPacket& recvPacket)
     uint32 spellId;
     recvPacket >> spellId;
 
-    SpellEntry const* spellInfo = sSpellTemplate.LookupEntry<SpellEntry>(spellId);
+    SpellEntry const* spellInfo = sSpellTemplate.LookupEntry(spellId);
     if (!spellInfo)
         return;
 
-    if (spellInfo->HasAttribute(SPELL_ATTR_NO_AURA_CANCEL))
+    if (spellInfo->HasAttribute(SPELL_ATTR_CANT_CANCEL))
         return;
 
     if (IsPassiveSpell(spellInfo))
@@ -525,7 +506,11 @@ void WorldSession::HandlePetCancelAuraOpcode(WorldPacket& recvPacket)
     recvPacket >> guid;
     recvPacket >> spellId;
 
-    SpellEntry const* spellInfo = sSpellTemplate.LookupEntry<SpellEntry>(spellId);
+    // ignore for remote control state
+    if (!_player->IsSelfMover())
+        return;
+
+    SpellEntry const* spellInfo = sSpellTemplate.LookupEntry(spellId);
     if (!spellInfo)
     {
         sLog.outError("WORLD: unknown PET spell id %u", spellId);
@@ -553,6 +538,9 @@ void WorldSession::HandlePetCancelAuraOpcode(WorldPacket& recvPacket)
     }
 
     pet->RemoveAurasDueToSpell(spellId);
+
+    // TODO: check if its correctly handled in aura remove
+    //pet->AddCreatureSpellCooldown(spellId);
 }
 
 void WorldSession::HandleCancelGrowthAuraOpcode(WorldPacket& /*recvPacket*/)
@@ -602,7 +590,7 @@ void WorldSession::HandleSelfResOpcode(WorldPacket& /*recv_data*/)
 
     if (_player->GetUInt32Value(PLAYER_SELF_RES_SPELL))
     {
-        SpellEntry const* spellInfo = sSpellTemplate.LookupEntry<SpellEntry>(_player->GetUInt32Value(PLAYER_SELF_RES_SPELL));
+        SpellEntry const* spellInfo = sSpellTemplate.LookupEntry(_player->GetUInt32Value(PLAYER_SELF_RES_SPELL));
         if (spellInfo)
             _player->CastSpell(_player, spellInfo, TRIGGERED_NONE);
 

@@ -352,7 +352,7 @@ void GMTicketMgr::LoadGMTickets()
     }
 
     BarGoLink bar(result->GetRowCount());
-    
+
     do
     {
         bar.step();

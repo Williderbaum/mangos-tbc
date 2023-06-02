@@ -17,7 +17,7 @@
  */
 
 #include "PetAI.h"
-#include "Util/Errors.h"
+#include "Errors.h"
 #include "Entities/Pet.h"
 #include "Entities/Player.h"
 #include "Server/DBCStores.h"
@@ -25,7 +25,7 @@
 #include "AI/ScriptDevAI/ScriptDevAIMgr.h"
 #include "Entities/Creature.h"
 #include "World/World.h"
-#include "Util/Util.h"
+#include "Util.h"
 
 int PetAI::Permissible(const Creature* creature)
 {
@@ -35,25 +35,14 @@ int PetAI::Permissible(const Creature* creature)
     return PERMIT_BASE_NO;
 }
 
-PetAI::PetAI(Creature* creature) : CreatureAI(creature), inCombat(false)
+PetAI::PetAI(Creature* creature) : UnitAI(creature), m_creature(creature), inCombat(false), m_followAngle(M_PI_F / 2), m_followDist(1.5f)
 {
-    m_followAngle = M_PI_F / 2;
-    m_followDist = 1.5f;
     m_AllySet.clear();
     UpdateAllies();
 
-    if (creature->IsPet())
-    {
-        Pet* pet = dynamic_cast<Pet*>(creature);
-        if (pet->isControlled())
-        {
-            if (sWorld.getConfig(CONFIG_BOOL_PET_ATTACK_FROM_BEHIND))
-                m_attackAngle = M_PI_F;
-
-            if (Unit* owner = m_unit->GetOwner())
-                RequestFollow(owner);
-        }
-    }
+    if (creature->IsPet() && dynamic_cast<Pet*>(creature)->isControlled()
+        && sWorld.getConfig(CONFIG_BOOL_PET_ATTACK_FROM_BEHIND))
+        m_attackAngle = M_PI_F;
 
     switch (creature->GetUInt32Value(UNIT_CREATED_BY_SPELL))
     {
@@ -67,8 +56,18 @@ PetAI::PetAI(Creature* creature) : CreatureAI(creature), inCombat(false)
             break;
     }
 
+    // TODO: Remove this when unit support is removed
+    SetMeleeEnabled(!(m_creature->GetCreatureInfo()->ExtraFlags & CREATURE_EXTRA_FLAG_NO_MELEE));
+    if (m_creature->IsNoAggroOnSight())
+        SetReactState(REACT_DEFENSIVE);
     if (m_creature->IsGuard() || m_unit->GetCharmInfo()) // guards and charmed targets
         m_visibilityDistance = sWorld.getConfig(CONFIG_FLOAT_SIGHT_GUARDER);
+}
+
+PetAI::PetAI(Unit* unit) : UnitAI(unit), inCombat(false), m_followAngle(PET_FOLLOW_ANGLE), m_followDist(PET_FOLLOW_DIST)
+{
+    m_AllySet.clear();
+    UpdateAllies();
 }
 
 void PetAI::MoveInLineOfSight(Unit* who)
@@ -111,7 +110,7 @@ void PetAI::AttackStart(Unit* who)
         // thus with the following clear the original TMG gets invalidated and crash, doh
         // hope it doesn't start to leak memory without this :-/
         // i_pet->Clear();
-        HandleMovementOnAttackStart(who, false);
+        HandleMovementOnAttackStart(who);
 
         inCombat = true;
     }
@@ -119,23 +118,13 @@ void PetAI::AttackStart(Unit* who)
 
 void PetAI::EnterEvadeMode()
 {
-    // check for "chain pull" scenario - pet has already been sent to attack while exiting from an earlier combat
-    // avoid AttackStop in CombatStop so that pet doesn't lose current target and return to follow owner in this case
-    if (m_unit->GetTarget() && m_unit->GetVictim())
-    {
-        m_unit->RemoveAllAttackers();
-        m_unit->DeleteThreatList();
-        m_unit->GetCombatManager().StopCombatTimer();
-        m_unit->ClearInCombat();
-    }
-    else
-        m_unit->CombatStop();
+    m_unit->CombatStop();
 }
 
 void PetAI::UpdateAI(const uint32 diff)
 {
-    UpdateTimers(diff, m_creature->IsInCombat());
-
+    if (!m_unit->IsAlive())
+        return;
     Creature* creature = (m_unit->GetTypeId() == TYPEID_UNIT) ? static_cast<Creature*>(m_unit) : nullptr;
     Pet* pet = (creature && creature->IsPet()) ? static_cast<Pet*>(m_unit) : nullptr;
 
@@ -155,11 +144,8 @@ void PetAI::UpdateAI(const uint32 diff)
     if (victim && victim->GetCombatManager().IsEvadingHome())
         victim = nullptr;
 
-    CharmInfo* charminfo = m_unit->GetCharmInfo();
-    MANGOS_ASSERT(charminfo);
-
     // Stop auto attack and chase if victim was dropped
-    if (inCombat && (!victim || (victim->IsCrowdControlled() && victim->HasAuraPetShouldAvoidBreaking(pet, charminfo->GetPetLastAttackCommandTime()))))
+    if (inCombat && !victim)
     {
         m_unit->AttackStop(true, true);
         inCombat = false;
@@ -169,6 +155,9 @@ void PetAI::UpdateAI(const uint32 diff)
         if (mm->GetCurrentMovementGeneratorType() == CHASE_MOTION_TYPE)
             mm->MovementExpired();
     }
+
+    CharmInfo* charminfo = m_unit->GetCharmInfo();
+    MANGOS_ASSERT(charminfo);
 
     if (charminfo->GetIsRetreating())
     {
@@ -201,12 +190,8 @@ void PetAI::UpdateAI(const uint32 diff)
                      && m_unit->IsWithinLOSInMap(victim, true))
             {
                 uint32 spellId = charminfo->GetSpellOpener();
-                SpellEntry const* spellInfo = sSpellTemplate.LookupEntry<SpellEntry>(spellId);
-                uint32 flags = TRIGGERED_NORMAL_COMBAT_CAST;
-                if (m_creature->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PLAYER_CONTROLLED))
-                    flags |= TRIGGERED_PET_CAST;
-
-                Spell* spell = new Spell(m_unit, spellInfo, flags);
+                SpellEntry const* spellInfo = sSpellTemplate.LookupEntry(spellId);
+                Spell* spell = new Spell(m_unit, spellInfo, TRIGGERED_NONE);
 
                 // Push back stored spell
                 targetSpellStore.push_back(TargetSpellList::value_type(victim, spell));
@@ -215,15 +200,15 @@ void PetAI::UpdateAI(const uint32 diff)
                 charminfo->SetSpellOpener();
             }
         }
-        else if (creature)
+        else if (pet)
         {
-            for (uint8 i = 0; i < creature->GetPetAutoSpellSize(); ++i)
+            for (uint8 i = 0; i < pet->GetPetAutoSpellSize(); ++i)
             {
-                uint32 spellId = creature->GetPetAutoSpellOnPos(i);
+                uint32 spellId = pet->GetPetAutoSpellOnPos(i);
                 if (!spellId)
                     continue;
 
-                SpellEntry const* spellInfo = sSpellTemplate.LookupEntry<SpellEntry>(spellId);
+                SpellEntry const* spellInfo = sSpellTemplate.LookupEntry(spellId);
                 if (!spellInfo)
                     continue;
 
@@ -254,21 +239,11 @@ void PetAI::UpdateAI(const uint32 diff)
                 else if (IsNonCombatSpell(spellInfo))
                     continue;
 
-                Spell* spell = new Spell(m_unit, spellInfo, TRIGGERED_NORMAL_COMBAT_CAST);
+                Spell* spell = new Spell(m_unit, spellInfo, TRIGGERED_NONE);
 
-                if (inCombat && spell->CanAutoCast(IsOnlySelfTargeting(spellInfo) ? m_unit : victim))
+                if (inCombat && spell->CanAutoCast(victim))
                 {
                     targetSpellStore.push_back(TargetSpellList::value_type(victim, spell));
-                }
-                else if (!IsSpellRequireTarget(spellInfo))
-                {
-                    if (!spell->CanAutoCast(m_unit))
-                    {
-                        delete spell;
-                        continue;
-                    }
-
-                    targetSpellStore.push_back(TargetSpellList::value_type(nullptr, spell));
                 }
                 else
                 {
@@ -305,12 +280,16 @@ void PetAI::UpdateAI(const uint32 diff)
             targetSpellStore.erase(targetSpellStore.begin() + index);
 
             SpellCastTargets targets;
-            if (target)
-            {
-                targets.setUnitTarget(target);
+            targets.setUnitTarget(target);
 
-                if (!m_unit->HasInArc(target))
-                    m_unit->SetFacingToObject(target);
+            if (!m_unit->HasInArc(target))
+            {
+                m_unit->SetInFront(target);
+                if (target->GetTypeId() == TYPEID_PLAYER)
+                    m_unit->SendCreateUpdateToPlayer((Player*)target);
+
+                if (owner && owner->GetTypeId() == TYPEID_PLAYER)
+                    m_unit->SendCreateUpdateToPlayer((Player*)owner);
             }
 
             if (pet)
@@ -404,7 +383,7 @@ void PetAI::UpdateAllies()
     if (m_AllySet.size() == 2 && !group)
         return;
     // owner is in group; group members filled in already (no raid -> subgroupcount = whole count)
-    if (group && !group->IsRaidGroup() && m_AllySet.size() == (group->GetMembersCount() + 2))
+    if (group && !group->isRaidGroup() && m_AllySet.size() == (group->GetMembersCount() + 2))
         return;
 
     m_AllySet.clear();
@@ -425,18 +404,6 @@ void PetAI::UpdateAllies()
             m_AllySet.insert(target->GetObjectGuid());
         }
     }
-}
-
-void PetAI::OnUnsummon()
-{
-    CreatureAI::OnUnsummon();
-    RelinquishFollow(m_unit->GetOwnerGuid());
-}
-
-void PetAI::JustDied(Unit* killer)
-{
-    CreatureAI::JustDied(killer);
-    RelinquishFollow(m_unit->GetOwnerGuid());
 }
 
 void PetAI::AttackedBy(Unit* attacker)

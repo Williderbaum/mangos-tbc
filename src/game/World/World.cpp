@@ -28,7 +28,7 @@
 #include "Log.h"
 #include "Server/Opcodes.h"
 #include "Server/WorldSession.h"
-#include "Server/WorldPacket.h"
+#include "WorldPacket.h"
 #include "Entities/Player.h"
 #include "Skills/SkillExtraItems.h"
 #include "Skills/SkillDiscovery.h"
@@ -59,22 +59,19 @@
 #include "Maps/MapPersistentStateMgr.h"
 #include "MotionGenerators/WaypointManager.h"
 #include "GMTickets/GMTicketMgr.h"
-#include "Util/Util.h"
+#include "Util.h"
 #include "Tools/CharacterDatabaseCleaner.h"
 #include "Entities/CreatureLinkingMgr.h"
 #include "Weather/Weather.h"
 #include "World/WorldState.h"
 #include "Cinematics/CinematicMgr.h"
-#include "Maps/TransportMgr.h"
-#include "Anticheat/Anticheat.hpp"
 
 #ifdef BUILD_AHBOT
- #include "AuctionHouseBot/AuctionHouseBot.h"
+#include "AuctionHouseBot/AuctionHouseBot.h"
 #endif
 
-#ifdef BUILD_METRICS
- #include "Metric/Metric.h"
-#endif
+#include "Metric/Metric.h"
+#include "Maps/TransportMgr.h"
 
 #include <algorithm>
 #include <mutex>
@@ -437,17 +434,15 @@ void World::LoadConfigSettings(bool reload)
     setConfigPos(CONFIG_FLOAT_RATE_DURABILITY_LOSS_PARRY,  "DurabilityLossChance.Parry",  0.05f);
     setConfigPos(CONFIG_FLOAT_RATE_DURABILITY_LOSS_BLOCK,  "DurabilityLossChance.Block",  0.05f);
 
-    setConfigPos(CONFIG_FLOAT_LISTEN_RANGE_SAY,       "ListenRange.Say",       25.0f);
+    setConfigPos(CONFIG_FLOAT_LISTEN_RANGE_SAY,       "ListenRange.Say",       40.0f);
     setConfigPos(CONFIG_FLOAT_LISTEN_RANGE_YELL,      "ListenRange.Yell",     300.0f);
-    setConfigPos(CONFIG_FLOAT_LISTEN_RANGE_TEXTEMOTE, "ListenRange.TextEmote", 25.0f);
+    setConfigPos(CONFIG_FLOAT_LISTEN_RANGE_TEXTEMOTE, "ListenRange.TextEmote", 40.0f);
 
     setConfigPos(CONFIG_FLOAT_GROUP_XP_DISTANCE, "MaxGroupXPDistance", 74.0f);
     setConfigPos(CONFIG_FLOAT_SIGHT_GUARDER,     "GuarderSight",       50.0f);
     setConfigPos(CONFIG_FLOAT_SIGHT_MONSTER,     "MonsterSight",       50.0f);
 
     setConfigPos(CONFIG_FLOAT_CREATURE_FAMILY_ASSISTANCE_RADIUS,      "CreatureFamilyAssistanceRadius",     10.0f);
-    setConfigPos(CONFIG_FLOAT_CREATURE_CHECK_FOR_HELP_RADIUS,         "CreatureCheckForHelpRadius",     5.0f);
-    setConfig(CONFIG_UINT32_CREATURE_CHECK_FOR_HELP_AGGRO_DELAY,      "CreatureCheckForHelpAggroDelay",     2000);
     setConfigPos(CONFIG_FLOAT_CREATURE_FAMILY_FLEE_ASSISTANCE_RADIUS, "CreatureFamilyFleeAssistanceRadius", 30.0f);
 
     ///- Read other configuration items from the config file
@@ -637,7 +632,7 @@ void World::LoadConfigSettings(bool reload)
 
     setConfig(CONFIG_UINT32_WORLD_BOSS_LEVEL_DIFF, "WorldBossLevelDiff", 3);
 
-    setConfigMinMax(CONFIG_INT32_QUEST_LOW_LEVEL_HIDE_DIFF, "Quests.LowLevelHideDiff", 5, -1, MAX_LEVEL);
+    setConfigMinMax(CONFIG_INT32_QUEST_LOW_LEVEL_HIDE_DIFF, "Quests.LowLevelHideDiff", 4, -1, MAX_LEVEL);
     setConfigMinMax(CONFIG_INT32_QUEST_HIGH_LEVEL_HIDE_DIFF, "Quests.HighLevelHideDiff", 7, -1, MAX_LEVEL);
 
     setConfigMinMax(CONFIG_UINT32_QUEST_DAILY_RESET_HOUR, "Quests.Daily.ResetHour", 6, 0, 23);
@@ -676,7 +671,6 @@ void World::LoadConfigSettings(bool reload)
     setConfigMinMax(CONFIG_FLOAT_GHOST_RUN_SPEED_WORLD,   "Death.Ghost.RunSpeed.World", 1.0f, 0.1f, 10.0f);
     setConfigMinMax(CONFIG_FLOAT_GHOST_RUN_SPEED_BG,      "Death.Ghost.RunSpeed.Battleground", 1.0f, 0.1f, 10.0f);
 
-    setConfig(CONFIG_FLOAT_LEASH_RADIUS, "LeashRadius", 30.f);
     setConfigMin(CONFIG_UINT32_CREATURE_RESPAWN_AGGRO_DELAY, "CreatureRespawnAggroDelay", 5000, 0);
     setConfig(CONFIG_UINT32_CREATURE_PICKPOCKET_RESTOCK_DELAY, "CreaturePickpocketRestockDelay", 600);
 
@@ -726,10 +720,6 @@ void World::LoadConfigSettings(bool reload)
     setConfig(CONFIG_UINT32_MIRRORTIMER_FATIGUE_MAX,       "MirrorTimer.Fatigue.Max", 60);
     setConfig(CONFIG_UINT32_MIRRORTIMER_BREATH_MAX,        "MirrorTimer.Breath.Max", 60);
     setConfig(CONFIG_UINT32_MIRRORTIMER_ENVIRONMENTAL_MAX, "MirrorTimer.Environmental.Max", 1);
-    setConfig(CONFIG_UINT32_ENVIRONMENTAL_DAMAGE_MIN, "EnvironmentalDamage.Min", 605);
-    setConfigMin(CONFIG_UINT32_ENVIRONMENTAL_DAMAGE_MAX, "EnvironmentalDamage.Max", 610, getConfig(CONFIG_UINT32_ENVIRONMENTAL_DAMAGE_MIN));
-
-    setConfig(CONFIG_UINT32_INTERACTION_PAUSE_TIMER, "InteractionPauseTimer", 180000);
 
     setConfig(CONFIG_BOOL_PET_UNSUMMON_AT_MOUNT,      "PetUnsummonAtMount", false);
     setConfig(CONFIG_BOOL_PET_ATTACK_FROM_BEHIND,     "PetAttackFromBehind", true);
@@ -812,12 +802,14 @@ void World::LoadConfigSettings(bool reload)
     setConfig(CONFIG_BOOL_VMAP_INDOOR_CHECK, "vmap.enableIndoorCheck", true);
     bool enableLOS = sConfig.GetBoolDefault("vmap.enableLOS", false);
     bool enableHeight = sConfig.GetBoolDefault("vmap.enableHeight", false);
+    std::string ignoreSpellIds = sConfig.GetStringDefault("vmap.ignoreSpellIds");
 
     if (!enableHeight)
         sLog.outError("VMAP height use disabled! Creatures movements and other things will be in broken state.");
 
     VMAP::VMapFactory::createOrGetVMapManager()->setEnableLineOfSightCalc(enableLOS);
     VMAP::VMapFactory::createOrGetVMapManager()->setEnableHeightCalc(enableHeight);
+    VMAP::VMapFactory::preventSpellsFromBeingTestedForLoS(ignoreSpellIds.c_str());
     sLog.outString("WORLD: VMap support included. LineOfSight:%i, getHeight:%i, indoorCheck:%i",
                    enableLOS, enableHeight, getConfig(CONFIG_BOOL_VMAP_INDOOR_CHECK) ? 1 : 0);
     sLog.outString("WORLD: VMap data directory is: %svmaps", m_dataPath.c_str());
@@ -830,11 +822,7 @@ void World::LoadConfigSettings(bool reload)
     setConfig(CONFIG_BOOL_PATH_FIND_OPTIMIZE, "PathFinder.OptimizePath", true);
     setConfig(CONFIG_BOOL_PATH_FIND_NORMALIZE_Z, "PathFinder.NormalizeZ", false);
 
-    setConfig(CONFIG_UINT32_MAX_RECRUIT_A_FRIEND_BONUS_PLAYER_LEVEL, "Raf.BonusLevel", 60);
-    setConfig(CONFIG_UINT32_MAX_RECRUIT_A_FRIEND_BONUS_PLAYER_LEVEL_DIFFERENCE, "Raf.LevelDifference", 4);
-    setConfig(CONFIG_FLOAT_MAX_RECRUIT_A_FRIEND_DISTANCE, "Raf.Distance", 100.f);
-
-    setConfig(CONFIG_UINT32_SUNSREACH_COUNTER, "Sunsreach.CounterMax", 10000);
+    setConfig(CONFIG_BOOL_ACCOUNT_DATA, "AccountData", false);
 
     sLog.outString();
 }
@@ -897,16 +885,17 @@ void World::SetInitialWorldSettings()
     sLog.outString("Loading faction_store...");
     sObjectMgr.LoadFactions();
 
-    // Load before npc_text, gossip_menu_option, script_texts
+    // Load before npc_text, gossip_menu_option, script_texts, creature_ai_texts, dbscript_string
     sLog.outString("Loading broadcast_text...");
     sObjectMgr.LoadBroadcastText();
 
     sLog.outString("Loading world safe locs ...");
-    LoadWorldSafeLocs();
+    sObjectMgr.LoadWorldSafeLocs();
 
     ///- Load the DBC files
     sLog.outString("Initialize DBC data stores...");
-    LoadDBCStores(m_dataPath);
+    LoadDBCTables();
+    //LoadDBCStores(m_dataPath);
     DetectDBCLang();
     sObjectMgr.SetDbc2StorageLocaleIndex(GetDefaultDbcLocale());    // Get once for all the locale index of DBC language (console/broadcasts)
 
@@ -1005,26 +994,14 @@ void World::SetInitialWorldSettings()
     sLog.outString("Loading Creature Stats...");
     sObjectMgr.LoadCreatureClassLvlStats();
 
-    sLog.outString("Loading String Ids...");
-    sScriptMgr.LoadStringIds(); // must be before LoadCreatureSpawnDataTemplates
-
     sLog.outString("Loading Creature templates...");
     sObjectMgr.LoadCreatureTemplates();
 
-    sLog.outString("Loading Creature immunities...");
-    sObjectMgr.LoadCreatureImmunities();
-
-    sLog.outString("Loading Combat Conditions, Unit Conditions and Worldstate Expressions...");
-    sObjectMgr.LoadConditionsAndExpressions();
-
-    sLog.outString("Loading Creature spell lists...");
-    sObjectMgr.LoadCreatureSpellLists();
+    sLog.outString("Loading Creature template spells...");
+    sObjectMgr.LoadCreatureTemplateSpells();
 
     sLog.outString("Loading Creature cooldowns...");
     sObjectMgr.LoadCreatureCooldowns();
-
-    sLog.outString("Loading Creature template spells...");
-    sObjectMgr.LoadCreatureTemplateSpells();
 
     sLog.outString("Loading Creature Model for race...");   // must be after creature templates
     sObjectMgr.LoadCreatureModelRace();
@@ -1058,9 +1035,6 @@ void World::SetInitialWorldSettings()
 
     sLog.outString("Loading Creature Data...");
     sObjectMgr.LoadCreatures();
-
-    sLog.outString("Loading Gameobject Spawn Entry Data..."); // must be before LoadGameObjects
-    sObjectMgr.LoadGameObjectSpawnEntry();
 
     sLog.outString("Loading Gameobject Data...");
     sObjectMgr.LoadGameObjects();
@@ -1101,14 +1075,8 @@ void World::SetInitialWorldSettings()
     sLog.outString("Loading Dungeon Encounters...");
     sObjectMgr.LoadDungeonEncounters();                     // Load DungeonEncounter.dbc from DB
 
-    sLog.outString("Loading WorldState Names...");          // must be before conditions and dbscripts
-    sObjectMgr.LoadWorldStateNames();
-
     sLog.outString("Loading Conditions...");                // Load Conditions
     sObjectMgr.LoadConditions();
-
-    sLog.outString("Loading Spawn Groups");                 // must be after creature and GO load
-    sObjectMgr.LoadSpawnGroups();
 
     // Not sure if this can be moved up in the sequence (with static data loading) as it uses MapManager
     sLog.outString("Loading Transports...");
@@ -1143,7 +1111,7 @@ void World::SetInitialWorldSettings()
     sScriptDevAIMgr.LoadEventIdScripts();
 
     sLog.outString("Loading Graveyard-zone links...");
-    LoadGraveyardZones();
+    sObjectMgr.LoadGraveyardZones();
 
     sLog.outString("Loading taxi flight shortcuts...");
     sObjectMgr.LoadTaxiShortcuts();
@@ -1184,8 +1152,7 @@ void World::SetInitialWorldSettings()
     sObjectMgr.LoadMailLevelRewards();
 
     sLog.outString("Loading Loot Tables...");
-    LootIdSet ids_set;
-    LoadLootTables(ids_set);
+    LoadLootTables();
     sLog.outString(">>> Loot Tables loaded");
     sLog.outString();
 
@@ -1208,16 +1175,16 @@ void World::SetInitialWorldSettings()
     sScriptMgr.LoadDbScriptRandomTemplates();
     ///- Load and initialize DBScripts Engine
     sLog.outString("Loading DB-Scripts Engine...");
-    sScriptMgr.LoadScriptMap(SCRIPT_TYPE_RELAY);                // must be first in dbscripts loading
-    sScriptMgr.LoadScriptMap(SCRIPT_TYPE_GOSSIP);               // must be before gossip menu options
-    sScriptMgr.LoadScriptMap(SCRIPT_TYPE_QUEST_START);          // must be after load Creature/Gameobject(Template/Data) and QuestTemplate
-    sScriptMgr.LoadScriptMap(SCRIPT_TYPE_QUEST_END);            // must be after load Creature/Gameobject(Template/Data) and QuestTemplate
-    sScriptMgr.LoadScriptMap(SCRIPT_TYPE_SPELL);                // must be after load Creature/Gameobject(Template/Data)
-    sScriptMgr.LoadScriptMap(SCRIPT_TYPE_GAMEOBJECT);           // must be after load Creature/Gameobject(Template/Data)
-    sScriptMgr.LoadScriptMap(SCRIPT_TYPE_GAMEOBJECT_TEMPLATE);  // must be after load Creature/Gameobject(Template/Data)
-    sScriptMgr.LoadScriptMap(SCRIPT_TYPE_EVENT);                // must be after load Creature/Gameobject(Template/Data)
-    sScriptMgr.LoadScriptMap(SCRIPT_TYPE_CREATURE_DEATH);       // must be after load Creature/Gameobject(Template/Data)
-    sScriptMgr.LoadScriptMap(SCRIPT_TYPE_CREATURE_MOVEMENT);    // before loading from creature_movement
+    sScriptMgr.LoadRelayScripts();                          // must be first in dbscripts loading
+    sScriptMgr.LoadGossipScripts();                         // must be before gossip menu options
+    sScriptMgr.LoadQuestStartScripts();                     // must be after load Creature/Gameobject(Template/Data) and QuestTemplate
+    sScriptMgr.LoadQuestEndScripts();                       // must be after load Creature/Gameobject(Template/Data) and QuestTemplate
+    sScriptMgr.LoadSpellScripts();                          // must be after load Creature/Gameobject(Template/Data)
+    sScriptMgr.LoadGameObjectScripts();                     // must be after load Creature/Gameobject(Template/Data)
+    sScriptMgr.LoadGameObjectTemplateScripts();             // must be after load Creature/Gameobject(Template/Data)
+    sScriptMgr.LoadEventScripts();                          // must be after load Creature/Gameobject(Template/Data)
+    sScriptMgr.LoadCreatureDeathScripts();                  // must be after load Creature/Gameobject(Template/Data)
+    sScriptMgr.LoadCreatureMovementScripts();               // before loading from creature_movement
     sObjectMgr.LoadAreatriggerLocales();
     sLog.outString(">>> Scripts loaded");
     sLog.outString();
@@ -1301,6 +1268,9 @@ void World::SetInitialWorldSettings()
     sTicketMgr.LoadGMTickets();
 
     ///- Load and initialize EventAI Scripts
+    sLog.outString("Loading CreatureEventAI Texts...");
+    sEventAIMgr.LoadCreatureEventAI_Texts(false);           // false, will checked in LoadCreatureEventAI_Scripts
+
     sLog.outString("Loading CreatureEventAI Summons...");
     sEventAIMgr.LoadCreatureEventAI_Summons(false);         // false, will checked in LoadCreatureEventAI_Scripts
 
@@ -1315,9 +1285,6 @@ void World::SetInitialWorldSettings()
     // after SD2
     sLog.outString("Loading spell scripts...");
     SpellScriptMgr::LoadScripts();
-
-    // after spellscripts
-    sScriptDevAIMgr.CheckScriptNames();
 
     ///- Initialize game time and timers
     sLog.outString("Initialize game time and timers");
@@ -1358,6 +1325,7 @@ void World::SetInitialWorldSettings()
 
     ///- Initialize static helper structures
     AIRegistry::Initialize();
+    Player::InitVisibleBits();
 
     ///- Initialize Outdoor PvP
     sLog.outString("Starting Outdoor PvP System");          // should be before loading maps
@@ -1372,7 +1340,6 @@ void World::SetInitialWorldSettings()
     sLog.outString("Starting BattleGround System");
     sBattleGroundMgr.CreateInitialBattleGrounds();
     sBattleGroundMgr.InitAutomaticArenaPointDistribution();
-    CheckLootTemplates_Reference(ids_set);
 
     sLog.outString("Deleting expired bans...");
     LoginDatabase.Execute("DELETE FROM ip_banned WHERE expires_at<=UNIX_TIMESTAMP() AND expires_at<>banned_at");
@@ -1406,9 +1373,6 @@ void World::SetInitialWorldSettings()
     // Delete all characters which have been deleted X days before
     Player::DeleteOldCharacters();
 
-    sLog.outString("Loading anticheat library");
-    sAnticheatLib->Initialize();
-
 #ifdef BUILD_AHBOT
     sLog.outString("Initialize AuctionHouseBot...");
     sAuctionHouseBot.Initialize();
@@ -1419,11 +1383,8 @@ void World::SetInitialWorldSettings()
     sWorldState.Load();
     sLog.outString();
 
-#ifdef BUILD_METRICS
     // update metrics output every second
     m_timers[WUPDATE_METRICS].SetInterval(1 * IN_MILLISECONDS);
-#endif // BUILD_METRICS
-
 
 #ifdef BUILD_PLAYERBOT
     PlayerbotMgr::SetInitialWorldSettings();
@@ -1547,9 +1508,7 @@ void World::Update(uint32 diff)
 #endif
 
     /// <li> Handle session updates
-#ifdef BUILD_METRICS
     auto preSessionTime = std::chrono::time_point_cast<std::chrono::milliseconds>(Clock::now());
-#endif
     UpdateSessions(diff);
 
     /// <li> Update uptime table
@@ -1561,22 +1520,15 @@ void World::Update(uint32 diff)
         m_timers[WUPDATE_UPTIME].Reset();
         LoginDatabase.PExecute("UPDATE uptime SET uptime = %u, maxplayers = %u WHERE realmid = %u AND starttime = " UI64FMTD, tmpDiff, maxClientsNum, realmID, uint64(m_startTime));
     }
-
+    auto preMapTime = std::chrono::time_point_cast<std::chrono::milliseconds>(Clock::now());
     /// <li> Handle all other objects
     ///- Update objects (maps, transport, creatures,...)
-#ifdef BUILD_METRICS
-    auto preMapTime = std::chrono::time_point_cast<std::chrono::milliseconds>(Clock::now());
-#endif
     sMapMgr.Update(diff);
-#ifdef BUILD_METRICS
     auto postMapTime = std::chrono::time_point_cast<std::chrono::milliseconds>(Clock::now());
-#endif
     sBattleGroundMgr.Update(diff);
     sOutdoorPvPMgr.Update(diff);
     sWorldState.Update(diff);
-#ifdef BUILD_METRICS
     auto postSingletonTime = std::chrono::time_point_cast<std::chrono::milliseconds>(Clock::now());
-#endif
     ///- Update groups with offline leaders
     if (m_timers[WUPDATE_GROUPS].Passed())
     {
@@ -1615,13 +1567,12 @@ void World::Update(uint32 diff)
         m_timers[WUPDATE_EVENTS].Reset();
     }
 
-#ifdef BUILD_METRICS
     if (m_timers[WUPDATE_METRICS].Passed())
     {
         m_timers[WUPDATE_METRICS].Reset();
+
         GeneratePacketMetrics();
     }
-#endif
 
     /// </ul>
     ///- Move all creatures with "delayed move" and remove and delete all objects with "delayed remove"
@@ -1635,7 +1586,7 @@ void World::Update(uint32 diff)
 
     // cleanup unused GridMap objects as well as VMaps
     sTerrainMgr.Update(diff);
-#ifdef BUILD_METRICS
+
     auto updateEndTime = std::chrono::time_point_cast<std::chrono::milliseconds>(Clock::now());
     long long total = (updateEndTime - m_currentTime).count();
     long long presession = (preSessionTime - m_currentTime).count();
@@ -1651,7 +1602,6 @@ void World::Update(uint32 diff)
     meas.add_field("map", std::to_string(map));
     meas.add_field("singletons", std::to_string(singletons));
     meas.add_field("cleanup", std::to_string(cleanup));
-#endif
 }
 
 namespace MaNGOS
@@ -2048,7 +1998,6 @@ void World::ShutdownMsg(bool show /*= false*/, Player* player /*= nullptr*/)
 
     ///- Display a message every 12 hours, 1 hour, 5 minutes, 1 minute and 15 seconds
     if (show ||
-            (m_ShutdownTimer <= 15) || // every sec down from 15 secs
             (m_ShutdownTimer < 5 * MINUTE && (m_ShutdownTimer % 15) == 0) ||            // < 5 min; every 15 sec
             (m_ShutdownTimer < 15 * MINUTE && (m_ShutdownTimer % MINUTE) == 0) ||       // < 15 min; every 1 min
             (m_ShutdownTimer < 30 * MINUTE && (m_ShutdownTimer % (5 * MINUTE)) == 0) || // < 30 min; every 5 min
@@ -2626,28 +2575,11 @@ void World::InvalidatePlayerDataToAllClient(ObjectGuid guid) const
     SendGlobalMessage(data);
 }
 
-void World::SendGMTextFlags(uint32 accountFlag, int32 stringId, std::string type, const char* message)
-{
-    std::string mangosString = sObjectMgr.GetMangosString(stringId, DEFAULT_LOCALE);
-    std::string output = mangosString + " Type: " + type + " Content: " + message;
-    WorldPacket inform;
-    ChatHandler::BuildChatPacket(inform, CHAT_MSG_WHISPER_INFORM, output.data(), LANG_UNIVERSAL, CHAT_TAG_NONE);
-    GetMessager().AddMessage([inform, accountFlag](World* world)
-    {
-        world->ExecuteForAllSessions([inform, accountFlag](auto& data)
-        {
-            if (data.HasAccountFlag(accountFlag))
-                data.SendPacket(inform);
-        });
-    });
-}
-
 void World::IncrementOpcodeCounter(uint32 opcodeId)
 {
     ++m_opcodeCounters[opcodeId];
 }
 
-#ifdef BUILD_METRICS
 void World::GeneratePacketMetrics()
 {
     for (uint32 i = 0; i < NUM_MSG_TYPES; ++i)
@@ -2691,117 +2623,23 @@ void World::GeneratePacketMetrics()
     meas_players.add_field("mage", std::to_string(GetOnlineClassPlayers(CLASS_MAGE)));
     meas_players.add_field("warlock", std::to_string(GetOnlineClassPlayers(CLASS_WARLOCK)));
     meas_players.add_field("druid", std::to_string(GetOnlineClassPlayers(CLASS_DRUID)));
-
-    metric::measurement meas_latency("world.metrics.latency");
-    meas_latency.add_field("online", std::to_string(GetAverageLatency()));
 }
 
-uint32 World::GetAverageLatency() const
+bool World::IsAcceptableClientBuild(uint32 build)
 {
-    if (m_sessions.size() == 0)
-        return 0;
+    int accepted_versions[] = EXPECTED_MANGOSD_CLIENT_BUILD;
+    for (int i = 0; accepted_versions[i]; ++i)
+        if (int(build) == accepted_versions[i])
+            return true;
 
-    uint32 result = 0;
-    const_cast<World*>(this)->ExecuteForAllSessions([&](WorldSession const& session)
-    {
-        result += session.GetLatency();
-    });
-    result /= m_sessions.size();
-    return result;
-}
-#endif
-
-// Load or reload the graveyard links from the data
-void World::LoadGraveyardZones()
-{
-    // Clear the map (in case we're reloading) and then add all the entries from
-    // the database.
-
-    // mGraveYardMap has records by both map id and area id. map ID records have their
-    // most significant bit set. If you want to query for a map id you must
-    // query map_id | (1 << 31) instead.
-    auto& graveyardMap = GetGraveyardManager().GetGraveyardMap();
-
-    QueryResult* result = WorldDatabase.Query("SELECT id,ghost_loc,link_kind,faction FROM game_graveyard_zone");
-
-    uint32 count = 0;
-
-    if (!result)
-    {
-        BarGoLink bar(1);
-        bar.step();
-        sLog.outString(">> Loaded %u graveyard-zone links", count);
-        sLog.outString();
-        return;
-    }
-
-    BarGoLink bar(result->GetRowCount());
-
-    do
-    {
-        ++count;
-        bar.step();
-
-        Field* fields = result->Fetch();
-
-        uint32 safeLocId = fields[0].GetUInt32();
-        uint32 locId = fields[1].GetUInt32();
-        uint32 linkKind = fields[2].GetUInt32();
-        uint32 team = fields[3].GetUInt32();
-
-        if (linkKind != 0 && linkKind != 1)
-        {
-            sLog.outErrorDb("Table `game_graveyard_zone` has record with invalid `link_kind`=%d state, skipped.", linkKind);
-            continue;
-        }
-
-        WorldSafeLocsEntry const* entry = sWorldSafeLocsStore.LookupEntry<WorldSafeLocsEntry>(safeLocId);
-        if (!entry)
-        {
-            sLog.outErrorDb("Table `game_graveyard_zone` has record for nonexistent graveyard (WorldSafeLocs.dbc id) %u, skipped.", safeLocId);
-            continue;
-        }
-
-        if (linkKind == GRAVEYARD_AREALINK && GetAreaEntryByAreaID(locId) == nullptr)
-        {
-            sLog.outErrorDb("Table `game_graveyard_zone` has record for nonexistent area id (%u), skipped.", locId);
-            continue;
-        }
-
-        if (linkKind == GRAVEYARD_MAPLINK && sMapStore.LookupEntry(locId) == nullptr)
-        {
-            sLog.outErrorDb("Table `game_graveyard_zone` has record for nonexistent map id (%u), skipped.", locId);
-            continue;
-        }
-
-        if (team != TEAM_BOTH_ALLOWED && team != HORDE && team != ALLIANCE)
-        {
-            sLog.outErrorDb("Table `game_graveyard_zone` has record for non player faction (%u), skipped.", team);
-            continue;
-        }
-
-        uint32 locKey = GraveyardManager::GraveyardLinkKey(locId, linkKind);
-        if (GraveyardManager::FindGraveYardData(graveyardMap, safeLocId, locKey))
-            sLog.outErrorDb("Table `game_graveyard_zone` has a duplicate record"
-                " for Graveyard (ID: %u) and location (ID: %u, kind: %u), "
-                "skipped.", safeLocId, locId, linkKind);
-        else
-        {
-            GraveYardData data;
-            data.safeLocId = safeLocId;
-            data.team = Team(team);
-            graveyardMap.insert(GraveYardMap::value_type(locKey, data));
-        }
-    } while (result->NextRow());
-
-    delete result;
-
-    sLog.outString(">> Loaded %u graveyard-zone links", count);
-    sLog.outString();
+    return false;
 }
 
-void World::LoadWorldSafeLocs() const
+std::string World::AcceptableClientBuildsListStr()
 {
-    sWorldSafeLocsStore.Load(true);
-    sLog.outString(">> Loaded %u world safe locs", sWorldSafeLocsStore.GetRecordCount());
+    std::ostringstream data;
+    int accepted_versions[] = EXPECTED_MANGOSD_CLIENT_BUILD;
+    for (int i = 0; accepted_versions[i]; ++i)
+        data << accepted_versions[i] << " ";
+    return data.str();
 }

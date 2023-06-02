@@ -127,7 +127,7 @@ int32 GetUnlearnCostMedium(Player* pPlayer)                 // blacksmith, leath
 
 bool EquippedOk(Player* pPlayer, uint32 spellId)
 {
-    SpellEntry const* spell = GetSpellStore()->LookupEntry<SpellEntry>(spellId);
+    SpellEntry const* spell = GetSpellStore()->LookupEntry(spellId);
 
     if (!spell)
         return false;

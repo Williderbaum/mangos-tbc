@@ -223,7 +223,7 @@ void WorldSession::HandleWhoOpcode(WorldPacket& recv_data)
             continue;
 
         std::string aname;
-        if (AreaTableEntry const* areaEntry = GetAreaEntryByAreaID(pzoneid))
+        if (AreaTableEntry const* areaEntry = TerrainManager::GetAreaEntryByAreaID(pzoneid))
             aname = areaEntry->area_name[GetSessionDbcLocale()];
 
         bool s_show = true;
@@ -330,7 +330,7 @@ void WorldSession::HandleLogoutCancelOpcode(WorldPacket& /*recv_data*/)
 void WorldSession::HandleTogglePvP(WorldPacket& recv_data)
 {
     uint32 zoneId = GetPlayer()->GetZoneId();
-    if (AreaTableEntry const* zone = GetAreaEntryByAreaID(zoneId))
+    if (AreaTableEntry const* zone = TerrainManager::GetAreaEntryByAreaID(zoneId))
     {
         if (zone->flags & AREA_FLAG_SANCTUARY)
             return;
@@ -392,7 +392,7 @@ void WorldSession::HandleSetSelectionOpcode(WorldPacket& recv_data)
 
     _player->SetSelectionGuid(guid);
 
-    if (Unit* mover = _player->GetMover()) // when player has a mover and the mover is a 
+    if (Unit* mover = _player->GetMover()) // when player has a mover and the mover is a
         if (mover != _player)
             mover->SetSelectionGuid(guid);
 
@@ -719,7 +719,7 @@ void WorldSession::HandleAreaTriggerOpcode(WorldPacket& recv_data)
     const float delta = 5.0f;
 
     // check if player in the range of areatrigger
-    if (!IsPointInAreaTriggerZone(atEntry, player->GetMapId(), player->GetPositionX(), player->GetPositionY(), player->GetPositionZ(), delta))
+    if (!Map::IsPointInAreaTriggerZone(atEntry, player->GetMapId(), player->GetPositionX(), player->GetPositionY(), player->GetPositionZ(), delta))
     {
         DEBUG_LOG("Player '%s' (GUID: %u) too far, ignore Area Trigger ID: %u", player->GetName(), player->GetGUIDLow(), Trigger_ID);
         return;
@@ -981,7 +981,7 @@ void WorldSession::HandleInspectOpcode(WorldPacket& recv_data)
     if (sWorld.getConfig(CONFIG_BOOL_TALENTS_INSPECTING) || _player->IsGameMaster())
     {
         // find class talent tabs (all players have 3 talent tabs)
-        uint32 const* talentTabIds = GetTalentTabPages(plr->getClass());
+        uint32 const* talentTabIds = ObjectMgr::GetTalentTabPages(plr->getClass());
 
         uint32 talentTabPos = 0;                            // pos of first talent rank in tab including all prev tabs
         for (uint32 i = 0; i < 3; ++i)
@@ -989,12 +989,8 @@ void WorldSession::HandleInspectOpcode(WorldPacket& recv_data)
             uint32 talentTabId = talentTabIds[i];
 
             // fill by real data
-            for (uint32 talentId = 0; talentId < sTalentStore.GetNumRows(); ++talentId)
+            for (auto talentInfo : sTalentStore)
             {
-                TalentEntry const* talentInfo = sTalentStore.LookupEntry(talentId);
-                if (!talentInfo)
-                    continue;
-
                 // skip another tab talents
                 if (talentInfo->TalentTab != talentTabId)
                     continue;
@@ -1015,7 +1011,7 @@ void WorldSession::HandleInspectOpcode(WorldPacket& recv_data)
                     continue;
 
                 // 1 rank talent bit index
-                uint32 curtalent_index = talentTabPos + GetTalentInspectBitPosInTab(talentId);
+                uint32 curtalent_index = talentTabPos + ObjectMgr::GetTalentInspectBitPosInTab(talentInfo->TalentID);
 
                 uint32 curtalent_rank_index = curtalent_index + curtalent_maxrank - 1;
 
@@ -1036,7 +1032,7 @@ void WorldSession::HandleInspectOpcode(WorldPacket& recv_data)
                 data.put<uint8>(guid_size + 4 + curtalent_rank_slot, val & 0xFF);
             }
 
-            talentTabPos += GetTalentTabInspectBitSize(talentTabId);
+            talentTabPos += ObjectMgr::GetTalentTabInspectBitSize(talentTabId);
         }
     }
 

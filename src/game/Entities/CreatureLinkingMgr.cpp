@@ -461,7 +461,7 @@ void CreatureLinkingHolder::DoCreatureLinkingEvent(CreatureLinkingEvent eventTyp
         {
             Creature* pMaster = nullptr;
             if (pInfo->mapId != INVALID_MAP_ID)             // entry case
-            { 
+            {
                 BossGuidMapBounds finds = m_masterGuid.equal_range(pInfo->masterId);
                 for (BossGuidMap::const_iterator itr = finds.first; itr != finds.second; ++itr)
                 {

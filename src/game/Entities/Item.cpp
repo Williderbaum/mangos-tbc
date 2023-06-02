@@ -70,7 +70,7 @@ void AddItemsSetItem(Player* player, Item* item)
         {
             if (!spell)                            // free slot
             {
-                SpellEntry const* spellInfo = sSpellTemplate.LookupEntry<SpellEntry>(set->spells[x]);
+                SpellEntry const* spellInfo = sSpellTemplate.LookupEntry(set->spells[x]);
                 if (!spellInfo)
                 {
                     sLog.outError("WORLD: unknown spell id %u in items set %u effects", set->spells[x], setid);
@@ -667,7 +667,7 @@ uint32 Item::GetSpell() const
 
 int32 Item::GenerateItemRandomPropertyId(uint32 item_id)
 {
-    ItemPrototype const* itemProto = sItemStorage.LookupEntry<ItemPrototype>(item_id);
+    ItemPrototype const* itemProto = sItemStorage.LookupEntry(item_id);
 
     if (!itemProto)
         return 0;
@@ -1034,7 +1034,7 @@ bool Item::GemsFitSockets() const
         uint32 gemid = enchantEntry->GemID;
         if (gemid)
         {
-            ItemPrototype const* gemProto = sItemStorage.LookupEntry<ItemPrototype>(gemid);
+            ItemPrototype const* gemProto = sItemStorage.LookupEntry(gemid);
             if (gemProto)
             {
                 GemPropertiesEntry const* gemProperty = sGemPropertiesStore.LookupEntry(gemProto->GemProperties);

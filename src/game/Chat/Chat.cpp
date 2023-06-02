@@ -1964,7 +1964,7 @@ bool ChatHandler::CheckEscapeSequences(const char* message)
                     if (!talentInfo)
                         return false;
 
-                    linkedSpell = sSpellTemplate.LookupEntry<SpellEntry>(talentInfo->RankID[0]);
+                    linkedSpell = sSpellTemplate.LookupEntry(talentInfo->RankID[0]);
                     if (!linkedSpell)
                         return false;
 
@@ -1991,7 +1991,7 @@ bool ChatHandler::CheckEscapeSequences(const char* message)
                         spellid += c - '0';
                         c = reader.peek();
                     }
-                    linkedSpell = sSpellTemplate.LookupEntry<SpellEntry>(spellid);
+                    linkedSpell = sSpellTemplate.LookupEntry(spellid);
                     if (!linkedSpell)
                         return false;
                 }
@@ -2010,7 +2010,7 @@ bool ChatHandler::CheckEscapeSequences(const char* message)
                         spellid += c - '0';
                         c = reader.peek();
                     }
-                    linkedSpell = sSpellTemplate.LookupEntry<SpellEntry>(spellid);
+                    linkedSpell = sSpellTemplate.LookupEntry(spellid);
                     if (!linkedSpell)
                         return false;
                 }

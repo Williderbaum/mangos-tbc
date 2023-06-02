@@ -883,7 +883,7 @@ class Spell
         void SetTargetMap(SpellEffectIndex effIndex, uint32 targetMode, bool targetB, TempTargetingData& targetingData);
         bool FillUnitTargets(TempTargetingData& targetingData, SpellTargetingData& data, uint32 i);
         bool CheckAndAddMagnetTarget(Unit* unitTarget, SpellEffectIndex effIndex, bool targetB, TempTargetingData& data);
-        static void CheckSpellScriptTargets(SQLMultiStorage::SQLMSIteratorBounds<SpellTargetEntry>& bounds, UnitList& tempTargetUnitMap, UnitList& targetUnitMap, SpellEffectIndex effIndex);
+        static void CheckSpellScriptTargets(SQLMultiStorage<SpellTargetEntry>::SQLMSIteratorBounds& bounds, UnitList& tempTargetUnitMap, UnitList& targetUnitMap, SpellEffectIndex effIndex);
         void FilterTargetMap(UnitList& filterUnitList, SpellTargetFilterScheme scheme, uint32 chainTargetCount);
         void FillFromTargetFlags(TempTargetingData& targetingData, SpellEffectIndex effIndex);
 

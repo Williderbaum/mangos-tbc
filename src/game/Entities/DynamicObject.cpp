@@ -94,7 +94,7 @@ bool DynamicObject::Create(uint32 guidlow, Unit* caster, uint32 spellId, SpellEf
     SetFloatValue(DYNAMICOBJECT_POS_Z, z);
     SetUInt32Value(DYNAMICOBJECT_CASTTIME, GetMap()->GetCurrentMSTime());    // new 2.4.0
 
-    SpellEntry const* spellProto = sSpellTemplate.LookupEntry<SpellEntry>(spellId);
+    SpellEntry const* spellProto = sSpellTemplate.LookupEntry(spellId);
     if (!spellProto)
     {
         sLog.outError("DynamicObject (spell %u) not created. Spell not exist!", spellId);
